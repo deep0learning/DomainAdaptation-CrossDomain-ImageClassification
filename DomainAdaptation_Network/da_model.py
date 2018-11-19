@@ -275,10 +275,10 @@ class DA_Model(object):
 
         with tf.variable_scope('loss'):
             # source domain supervised loss
-            self.cost = tf.reduce_mean(
+            self.cross_entropy = tf.reduce_mean(
                 tf.nn.softmax_cross_entropy_with_logits(logits=self.y_pred_source, labels=self.y_source))
             self.l2_cost = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-            self.loss_source = self.cost + self.l2_cost
+            self.loss_source = self.cross_entropy + self.l2_cost
 
             # generator losses
             self.g_sec1_target_loss = tf.reduce_mean(tf.losses.mean_squared_error(
@@ -294,9 +294,11 @@ class DA_Model(object):
                 predictions=self.pred_target,
                 labels=tf.ones_like(self.pred_target)))
 
-            self.g_loss = self.g_sec1_target_loss * 0.01 + self.g_sec2_target_loss * 0.01 + \
-                          self.g_sec3_target_loss * 0.01 + self.g_pred_target_loss * 0.01 + \
-                          self.loss_source
+            self.g_loss_step1 = self.loss_source
+            self.g_loss_step2 = self.loss_source + 0.01 * self.g_sec1_target_loss
+            self.g_loss_step3 = self.loss_source + 0.01 * self.g_sec1_target_loss + 0.01 * self.g_sec2_target_loss
+            self.g_loss_step4 = self.loss_source + 0.01 * self.g_sec1_target_loss + 0.01 * self.g_sec2_target_loss * 0.01 * self.g_sec3_target_loss
+            self.g_loss_step5 = self.loss_source + 0.01 * self.g_sec1_target_loss + 0.01 * self.g_sec2_target_loss * 0.01 * self.g_sec3_target_loss + 0.01 * self.g_pred_target_loss
 
             # discriminator losses
             self.featureMap_d_sec1_source_loss = tf.reduce_mean(tf.losses.mean_squared_error(
@@ -327,21 +329,38 @@ class DA_Model(object):
                 predictions=self.pred_target,
                 labels=tf.zeros_like(self.pred_target)))
 
-            self.feature_d_loss = self.featureMap_d_sec1_source_loss + self.featureMap_d_sec1_target_loss + \
-                                  self.featureMap_d_sec2_source_loss + self.featureMap_d_sec2_target_loss + \
-                                  self.featureMap_d_sec3_source_loss + self.featureMap_d_sec3_target_loss
+            self.feature_d_sec1_loss = self.featureMap_d_sec1_source_loss + self.featureMap_d_sec1_target_loss
+            self.feature_d_sec2_loss = self.featureMap_d_sec2_source_loss + self.featureMap_d_sec2_target_loss
+            self.feature_d_sec3_loss = self.featureMap_d_sec3_source_loss + self.featureMap_d_sec3_target_loss
+            self.feature_d_pred_loss = self.prediction_d_source_loss + self.prediction_d_target_loss
 
-            self.prediction_d_loss = self.prediction_d_source_loss + self.prediction_d_target_loss
-            self.d_loss = self.feature_d_loss + self.prediction_d_loss
+            self.d_loss_step1 = self.feature_d_sec1_loss
+            self.d_loss_step2 = self.feature_d_sec1_loss + self.feature_d_sec2_loss
+            self.d_loss_step3 = self.feature_d_sec1_loss + self.feature_d_sec2_loss + self.feature_d_sec3_loss
+            self.d_loss_step4 = self.feature_d_sec1_loss + self.feature_d_sec2_loss + self.feature_d_sec3_loss + self.feature_d_pred_loss
 
             tf.summary.scalar('source loss', self.loss_source)
             tf.summary.scalar('generatort_sec1_loss', self.g_sec1_target_loss)
             tf.summary.scalar('generator_sec2_loss', self.g_sec2_target_loss)
             tf.summary.scalar('generator_sec3_loss', self.g_sec3_target_loss)
-            tf.summary.scalar('g_loss', self.g_loss)
-            tf.summary.scalar('feature_discriminator_loss', self.feature_d_loss)
-            tf.summary.scalar('prediction_discriminator_loss', self.prediction_d_loss)
-            tf.summary.scalar('d_loss', self.d_loss)
+            tf.summary.scalar('generator_pred_loss', self.g_pred_target_loss)
+
+            tf.summary.scalar('g_loss_step1', self.g_loss_step1)
+            tf.summary.scalar('g_loss_step2', self.g_loss_step2)
+            tf.summary.scalar('g_loss_step3', self.g_loss_step3)
+            tf.summary.scalar('g_loss_step4', self.g_loss_step4)
+            tf.summary.scalar('g_loss_step5', self.g_loss_step5)
+
+            tf.summary.scalar('feature_discriminator_sec1_loss', self.feature_d_sec1_loss)
+            tf.summary.scalar('feature_discriminator_sec2_loss', self.feature_d_sec2_loss)
+            tf.summary.scalar('feature_discriminator_sec3_loss', self.feature_d_sec3_loss)
+
+            tf.summary.scalar('prediction_discriminator_loss', self.feature_d_pred_loss)
+
+            tf.summary.scalar('d_loss_step1', self.d_loss_step1)
+            tf.summary.scalar('d_loss_step2', self.d_loss_step2)
+            tf.summary.scalar('d_loss_step3', self.d_loss_step3)
+            tf.summary.scalar('d_loss_step4', self.d_loss_step4)
 
         with tf.variable_scope('optimization_variables'):
             self.t_var = tf.trainable_variables()
@@ -355,17 +374,25 @@ class DA_Model(object):
         with tf.variable_scope('optimize'):
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
             with tf.control_dependencies(update_ops):
-                self.supervised_train_op = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.loss_source,
-                                                                                               var_list=self.g_var)
-                self.g_train_op = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss, var_list=self.g_var)
+                self.g_train_op_step1 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss_step1,
+                                                                                            var_list=self.g_var)
+                self.g_train_op_step2 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss_step2,
+                                                                                            var_list=self.g_var)
+                self.g_train_op_step3 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss_step3,
+                                                                                            var_list=self.g_var)
+                self.g_train_op_step4 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss_step4,
+                                                                                            var_list=self.g_var)
+                self.g_train_op_step5 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss_step5,
+                                                                                            var_list=self.g_var)
 
-                self.d_feature_train_op = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(
-                    self.feature_d_loss,
-                    var_list=self.d_feature_var)
-                self.d_prediction_train_op = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(
-                    self.prediction_d_loss,
-                    var_list=self.d_prediction_var)
-                self.d_train_op = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss, var_list=self.d_var)
+                self.d_train_op_step1 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss_step1,
+                                                                                            var_list=self.d_var)
+                self.d_train_op_step2 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss_step2,
+                                                                                            var_list=self.d_var)
+                self.d_train_op_step3 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss_step3,
+                                                                                            var_list=self.d_var)
+                self.d_train_op_step4 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss_step4,
+                                                                                            var_list=self.d_var)
 
         with tf.variable_scope('tfSummary'):
             self.merged = tf.summary.merge_all()
@@ -476,30 +503,66 @@ class DA_Model(object):
                 _src_tr_img_batch, _src_tr_lab_batch = DA_init.next_batch(_src_tr_img, _src_tr_lab, self.bs, itr)
                 _tar_tr_img_batch = DA_init.next_batch_nolabel(_tar_tr_img, self.bs, itr)
 
+                feed_dict = {self.x_source: _src_tr_img_batch,
+                             self.y_source: _src_tr_lab_batch,
+                             self.x_target: _tar_tr_img_batch,
+                             self.is_training: True}
+                feed_dict_eval = {self.x_source: _src_tr_img_batch,
+                                  self.y_source: _src_tr_lab_batch,
+                                  self.x_target: _tar_tr_img_batch,
+                                  self.is_training: False}
+
                 if e < 50:
-                    _ = self.sess.run(self.supervised_train_op, feed_dict={self.x_source: _src_tr_img_batch,
-                                                                           self.y_source: _src_tr_lab_batch,
-                                                                           self.x_target: _tar_tr_img_batch,
-                                                                           self.is_training: True})
-                else:
-                    _, _ = self.sess.run([self.d_train_op, self.g_train_op],
-                                         feed_dict={self.x_source: _src_tr_img_batch,
-                                                    self.y_source: _src_tr_lab_batch,
-                                                    self.x_target: _tar_tr_img_batch,
-                                                    self.is_training: True})
+                    _ = self.sess.run(self.g_train_op_step1, feed_dict=feed_dict)
+                    _training_accuracy, _training_loss = self.sess.run(
+                        [self.accuracy_source, self.loss_source], feed_dict=feed_dict_eval)
 
-                _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
-                    [self.accuracy_source, self.loss_source, self.g_loss, self.d_loss],
-                    feed_dict={
-                        self.x_source: _src_tr_img_batch,
-                        self.y_source: _src_tr_lab_batch,
-                        self.x_target: _tar_tr_img_batch,
-                        self.is_training: False})
+                    source_training_acc += _training_accuracy
+                    source_training_loss += _training_loss
 
-                source_training_acc += _training_accuracy
-                source_training_loss += _training_loss
-                g_loss += _g_loss
-                d_loss += _d_loss
+                elif e < 100:
+                    _, _ = self.sess.run([self.g_train_op_step2, self.d_train_op_step1], feed_dict=feed_dict)
+                    _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
+                        [self.accuracy_source, self.loss_source, self.g_loss_step2, self.d_loss_step1],
+                        feed_dict=feed_dict_eval)
+
+                    source_training_acc += _training_accuracy
+                    source_training_loss += _training_loss
+                    g_loss += _g_loss
+                    d_loss += _d_loss
+
+                elif e < 150:
+                    _, _ = self.sess.run([self.g_train_op_step3, self.d_train_op_step2], feed_dict=feed_dict)
+                    _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
+                        [self.accuracy_source, self.loss_source, self.g_loss_step3, self.d_loss_step2],
+                        feed_dict=feed_dict_eval)
+
+                    source_training_acc += _training_accuracy
+                    source_training_loss += _training_loss
+                    g_loss += _g_loss
+                    d_loss += _d_loss
+
+                elif e < 200:
+                    _, _ = self.sess.run([self.g_train_op_step4, self.d_train_op_step3], feed_dict=feed_dict)
+                    _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
+                        [self.accuracy_source, self.loss_source, self.g_loss_step4, self.d_loss_step3],
+                        feed_dict=feed_dict_eval)
+
+                    source_training_acc += _training_accuracy
+                    source_training_loss += _training_loss
+                    g_loss += _g_loss
+                    d_loss += _d_loss
+
+                elif e <= self.eps:
+                    _, _ = self.sess.run([self.g_train_op_step5, self.d_train_op_step4], feed_dict=feed_dict)
+                    _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
+                        [self.accuracy_source, self.loss_source, self.g_loss_step5, self.d_loss_step4],
+                        feed_dict=feed_dict_eval)
+
+                    source_training_acc += _training_accuracy
+                    source_training_loss += _training_loss
+                    g_loss += _g_loss
+                    d_loss += _d_loss
 
             source_training_acc = float(source_training_acc / self.train_itr)
             source_training_loss = float(source_training_loss / self.train_itr)
@@ -520,8 +583,8 @@ class DA_Model(object):
             log1 = "Epoch: [%d], Domain: Source, Training Accuracy: [%g], Validation Accuracy: [%g], " \
                    "Training Loss: [%g], Validation Loss: [%g], generator Loss: [%g], Discriminator Loss: [%g], " \
                    "Time: [%s]" % (
-                   e, source_training_acc, source_validation_acc, source_training_loss, source_validation_loss,
-                   g_loss, d_loss, time.ctime(time.time()))
+                       e, source_training_acc, source_validation_acc, source_training_loss, source_validation_loss,
+                       g_loss, d_loss, time.ctime(time.time()))
 
             da_utils.save2file(log1, self.ckptDir, self.model)
 
