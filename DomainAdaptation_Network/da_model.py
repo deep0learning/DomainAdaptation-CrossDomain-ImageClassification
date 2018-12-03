@@ -11,8 +11,8 @@ import time
 
 class DA_Model(object):
     def __init__(self, model_name, sess, train_data, val_data, tst_data, epoch, restore_epoch, num_class, ksize,
-                 out_channel1, out_channel2, out_channel3, learning_rate, weight_decay, batch_size, img_height,
-                 img_width, train_phase):
+                 out_channel1, out_channel2, out_channel3, learning_rate, batch_size, img_height, img_width,
+                 train_phase):
 
         self.sess = sess
         self.source_training_data = train_data[0]
@@ -29,12 +29,18 @@ class DA_Model(object):
         self.oc2 = out_channel2
         self.oc3 = out_channel3
         self.lr = learning_rate
-        self.wd = weight_decay
         self.bs = batch_size
         self.img_h = img_height
         self.img_w = img_width
         self.num_class = num_class
         self.train_phase = train_phase
+        self.plt_epoch = []
+        self.plt_training_accuracy = []
+        self.plt_validation_accuracy = []
+        self.plt_training_loss = []
+        self.plt_validation_loss = []
+        self.plt_g_loss = []
+        self.plt_d_loss = []
 
         self.build_model()
         if self.train_phase == 'Train':
@@ -42,13 +48,13 @@ class DA_Model(object):
 
     def saveConfiguration(self):
         da_utils.save2file('epoch : %d' % self.eps, self.ckptDir, self.model)
+        da_utils.save2file('restore epoch : %d' % self.res_eps, self.ckptDir, self.model)
         da_utils.save2file('model : %s' % self.model, self.ckptDir, self.model)
         da_utils.save2file('ksize : %d' % self.k, self.ckptDir, self.model)
         da_utils.save2file('out channel 1 : %d' % self.oc1, self.ckptDir, self.model)
         da_utils.save2file('out channel 2 : %d' % self.oc2, self.ckptDir, self.model)
         da_utils.save2file('out channel 3 : %d' % self.oc3, self.ckptDir, self.model)
         da_utils.save2file('learning rate : %g' % self.lr, self.ckptDir, self.model)
-        da_utils.save2file('weight decay : %g' % self.wd, self.ckptDir, self.model)
         da_utils.save2file('batch size : %d' % self.bs, self.ckptDir, self.model)
         da_utils.save2file('image height : %d' % self.img_h, self.ckptDir, self.model)
         da_utils.save2file('image width : %d' % self.img_w, self.ckptDir, self.model)
@@ -58,8 +64,7 @@ class DA_Model(object):
     def convLayer(self, inputMap, out_channel, ksize, stride, scope_name, padding='SAME'):
         with tf.variable_scope(scope_name):
             conv_weight = tf.get_variable('conv_weight', [ksize, ksize, inputMap.get_shape()[-1], out_channel],
-                                          initializer=layers.variance_scaling_initializer(),
-                                          regularizer=layers.l2_regularizer(self.wd))
+                                          initializer=layers.variance_scaling_initializer())
 
             conv_result = tf.nn.conv2d(inputMap, conv_weight, strides=[1, stride, stride, 1], padding=padding)
 
@@ -101,8 +106,7 @@ class DA_Model(object):
         with tf.variable_scope(scope_name):
             in_channel = inputMap.get_shape()[-1]
             fc_weight = tf.get_variable('fc_weight', [in_channel, out_channel],
-                                        initializer=layers.variance_scaling_initializer(),
-                                        regularizer=layers.l2_regularizer(self.wd))
+                                        initializer=layers.variance_scaling_initializer())
             fc_bias = tf.get_variable('fc_bias', [out_channel], initializer=tf.zeros_initializer())
 
             fc_result = tf.matmul(inputMap, fc_weight) + fc_bias
@@ -225,19 +229,15 @@ class DA_Model(object):
             _fc2 = self.fcLayer(_relu1, out_channel=256, scope_name='_fc2')
             _relu2 = self.reluLayer(_fc2, scope_name='_relu2')
             _fc3 = self.fcLayer(_relu2, out_channel=512, scope_name='_fc3')
-            _relu3 = self.reluLayer(_fc3, scope_name='_relu3')
-            _fc4 = self.fcLayer(_relu3, out_channel=1, scope_name='_fc4')
 
-        return _fc4
+        return _fc3
 
     def build_model(self):
         self.x_source = tf.placeholder(tf.float32, shape=[None, self.img_h, self.img_w, 1], name='x_source')
         self.x_target = tf.placeholder(tf.float32, shape=[None, self.img_h, self.img_w, 1], name='x_target')
         self.y_source = tf.placeholder(tf.int32, shape=[None, self.num_class], name='y_source')
         self.y_target = tf.placeholder(tf.int32, shape=[None, self.num_class], name='y_target')
-
         self.is_training = tf.placeholder(tf.bool, name='is_training')
-
         tf.summary.image('source_input', self.x_source)
         tf.summary.image('target_input', self.x_target)
 
@@ -275,10 +275,8 @@ class DA_Model(object):
 
         with tf.variable_scope('loss'):
             # source domain supervised loss
-            self.cross_entropy = tf.reduce_mean(
+            self.loss_source = tf.reduce_mean(
                 tf.nn.softmax_cross_entropy_with_logits(logits=self.y_pred_source, labels=self.y_source))
-            self.l2_cost = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-            self.loss_source = self.cross_entropy + self.l2_cost
 
             # generator losses
             self.g_sec1_target_loss = tf.reduce_mean(tf.losses.mean_squared_error(
@@ -295,10 +293,10 @@ class DA_Model(object):
                 labels=tf.ones_like(self.pred_target)))
 
             self.g_loss_step1 = self.loss_source
-            self.g_loss_step2 = self.loss_source + 0.01 * self.g_sec1_target_loss
-            self.g_loss_step3 = self.loss_source + 0.01 * self.g_sec1_target_loss + 0.01 * self.g_sec2_target_loss
-            self.g_loss_step4 = self.loss_source + 0.01 * self.g_sec1_target_loss + 0.01 * self.g_sec2_target_loss * 0.01 * self.g_sec3_target_loss
-            self.g_loss_step5 = self.loss_source + 0.01 * self.g_sec1_target_loss + 0.01 * self.g_sec2_target_loss * 0.01 * self.g_sec3_target_loss + 0.01 * self.g_pred_target_loss
+            self.g_loss_step2 = self.loss_source + 0.1 * self.g_sec1_target_loss
+            self.g_loss_step3 = self.loss_source + 0.1 * self.g_sec1_target_loss + 0.1 * self.g_sec2_target_loss
+            self.g_loss_step4 = self.loss_source + 0.1 * self.g_sec1_target_loss + 0.1 * self.g_sec2_target_loss * 0.1 * self.g_sec3_target_loss
+            self.g_loss_step5 = self.loss_source + 0.1 * self.g_sec1_target_loss + 0.1 * self.g_sec2_target_loss * 0.1 * self.g_sec3_target_loss + 0.1 * self.g_pred_target_loss
 
             # discriminator losses
             self.featureMap_d_sec1_source_loss = tf.reduce_mean(tf.losses.mean_squared_error(
@@ -367,9 +365,10 @@ class DA_Model(object):
 
             self.g_var = [var for var in self.t_var if 'generator' in var.name]
 
-            self.d_feature_var = [var for var in self.t_var if '_feature_discriminator' in var.name]
-            self.d_prediction_var = [var for var in self.t_var if '_prediction_discriminator' in var.name]
-            self.d_var = [var for var in self.t_var if '_discriminator' in var.name]
+            self.d_sec1_fm_var = [var for var in self.t_var if 'sec1_featureMap' in var.name]
+            self.d_sec2_fm_var = [var for var in self.t_var if 'sec2_featureMap' in var.name]
+            self.d_sec3_fm_var = [var for var in self.t_var if 'sec3_featureMap' in var.name]
+            self.d_pred_fm_var = [var for var in self.t_var if 'prediction' in var.name]
 
         with tf.variable_scope('optimize'):
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -386,13 +385,13 @@ class DA_Model(object):
                                                                                             var_list=self.g_var)
 
                 self.d_train_op_step1 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss_step1,
-                                                                                            var_list=self.d_var)
+                                                                                            var_list=self.d_sec1_fm_var)
                 self.d_train_op_step2 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss_step2,
-                                                                                            var_list=self.d_var)
+                                                                                            var_list=self.d_sec1_fm_var + self.d_sec2_fm_var)
                 self.d_train_op_step3 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss_step3,
-                                                                                            var_list=self.d_var)
+                                                                                            var_list=self.d_sec1_fm_var + self.d_sec2_fm_var + self.d_sec3_fm_var)
                 self.d_train_op_step4 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss_step4,
-                                                                                            var_list=self.d_var)
+                                                                                            var_list=self.d_sec1_fm_var + self.d_sec2_fm_var + self.d_sec3_fm_var + self.d_pred_fm_var)
 
         with tf.variable_scope('tfSummary'):
             self.merged = tf.summary.merge_all()
@@ -488,7 +487,7 @@ class DA_Model(object):
     def train(self):
         print('Start to run in mode [Domain Adaptation Across Source and Target Domain]')
         self.sess.run(tf.global_variables_initializer())
-        self.train_itr = min(len(self.source_training_data[0]), len(self.target_training_data)) // self.bs
+        self.train_itr = len(self.source_training_data[0]) // self.bs
 
         for e in range(1, self.eps + 1):
             _src_tr_img, _src_tr_lab = DA_init.shuffle_data(self.source_training_data[0], self.source_training_data[1])
@@ -501,7 +500,7 @@ class DA_Model(object):
 
             for itr in range(self.train_itr):
                 _src_tr_img_batch, _src_tr_lab_batch = DA_init.next_batch(_src_tr_img, _src_tr_lab, self.bs, itr)
-                _tar_tr_img_batch = DA_init.next_batch_nolabel(_tar_tr_img, self.bs, itr)
+                _tar_tr_img_batch = DA_init.next_batch_nolabel(_tar_tr_img, self.bs)
 
                 feed_dict = {self.x_source: _src_tr_img_batch,
                              self.y_source: _src_tr_lab_batch,
@@ -512,7 +511,7 @@ class DA_Model(object):
                                   self.x_target: _tar_tr_img_batch,
                                   self.is_training: False}
 
-                if e < 50:
+                if e < 100:
                     _ = self.sess.run(self.g_train_op_step1, feed_dict=feed_dict)
                     _training_accuracy, _training_loss = self.sess.run(
                         [self.accuracy_source, self.loss_source], feed_dict=feed_dict_eval)
@@ -520,7 +519,7 @@ class DA_Model(object):
                     source_training_acc += _training_accuracy
                     source_training_loss += _training_loss
 
-                elif e < 100:
+                elif e < 150:
                     _, _ = self.sess.run([self.g_train_op_step2, self.d_train_op_step1], feed_dict=feed_dict)
                     _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
                         [self.accuracy_source, self.loss_source, self.g_loss_step2, self.d_loss_step1],
@@ -531,7 +530,7 @@ class DA_Model(object):
                     g_loss += _g_loss
                     d_loss += _d_loss
 
-                elif e < 150:
+                elif e < 200:
                     _, _ = self.sess.run([self.g_train_op_step3, self.d_train_op_step2], feed_dict=feed_dict)
                     _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
                         [self.accuracy_source, self.loss_source, self.g_loss_step3, self.d_loss_step2],
@@ -542,7 +541,7 @@ class DA_Model(object):
                     g_loss += _g_loss
                     d_loss += _d_loss
 
-                elif e < 200:
+                elif e < 250:
                     _, _ = self.sess.run([self.g_train_op_step4, self.d_train_op_step3], feed_dict=feed_dict)
                     _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
                         [self.accuracy_source, self.loss_source, self.g_loss_step4, self.d_loss_step3],
@@ -564,6 +563,8 @@ class DA_Model(object):
                     g_loss += _g_loss
                     d_loss += _d_loss
 
+            summary = self.sess.run(self.merged, feed_dict=feed_dict_eval)
+
             source_training_acc = float(source_training_acc / self.train_itr)
             source_training_loss = float(source_training_loss / self.train_itr)
             g_loss = float(g_loss / self.train_itr)
@@ -573,28 +574,49 @@ class DA_Model(object):
                 validation_data=self.source_validation_data, distribution_op=self.distribution_source,
                 loss_op=self.loss_source, inputX=self.x_source, inputY=self.y_source)
 
-            tf.summary.scalar('source_training_accuracy', source_training_acc)
-            tf.summary.scalar('source_training_loss', source_training_loss)
-            tf.summary.scalar('g_loss', g_loss)
-            tf.summary.scalar('d_loss', d_loss)
-            tf.summary.scalar('source_validation_accuracy', source_validation_acc)
-            tf.summary.scalar('source_validation_loss', source_validation_loss)
-
             log1 = "Epoch: [%d], Domain: Source, Training Accuracy: [%g], Validation Accuracy: [%g], " \
                    "Training Loss: [%g], Validation Loss: [%g], generator Loss: [%g], Discriminator Loss: [%g], " \
                    "Time: [%s]" % (
                        e, source_training_acc, source_validation_acc, source_training_loss, source_validation_loss,
                        g_loss, d_loss, time.ctime(time.time()))
 
+            self.plt_epoch.append(e)
+            self.plt_training_accuracy.append(source_training_acc)
+            self.plt_training_loss.append(source_training_loss)
+            self.plt_validation_accuracy.append(source_validation_acc)
+            self.plt_validation_loss.append(source_validation_loss)
+            self.plt_d_loss.append(d_loss)
+            self.plt_g_loss.append(g_loss)
+
+            da_utils.plotAccuracy(x=self.plt_epoch,
+                                  y1=self.plt_training_accuracy,
+                                  y2=self.plt_validation_accuracy,
+                                  figName=self.model,
+                                  line1Name='training',
+                                  line2Name='validation',
+                                  savePath=self.ckptDir)
+
+            da_utils.plotLoss(x=self.plt_epoch,
+                              y1=self.plt_training_loss,
+                              y2=self.plt_validation_loss,
+                              figName=self.model,
+                              line1Name='training',
+                              line2Name='validation',
+                              savePath=self.ckptDir)
+
+            da_utils.plotLoss(x=self.plt_epoch,
+                              y1=self.plt_d_loss,
+                              y2=self.plt_g_loss,
+                              figName=self.model + '_GD_Loss',
+                              line1Name='D_Loss',
+                              line2Name='G_Loss',
+                              savePath=self.ckptDir)
+
             da_utils.save2file(log1, self.ckptDir, self.model)
 
-            summary = self.sess.run(self.merged, feed_dict={self.x_source: _src_tr_img_batch,
-                                                            self.y_source: _src_tr_lab_batch,
-                                                            self.x_target: _tar_tr_img_batch,
-                                                            self.is_training: False})
             self.writer.add_summary(summary, e)
 
-            self.saver.save(self.sess, self.ckptDir + self.model + '-' + str(e) + '.ckpt')
+            self.saver.save(self.sess, self.ckptDir + self.model + '-' + str(e))
 
             self.test_procedure(self.source_test_data, distribution_op=self.distribution_source, inputX=self.x_source,
                                 inputY=self.y_source, mode='source')
@@ -603,6 +625,6 @@ class DA_Model(object):
 
     def test(self):
         print('Start to run in mode [Test in Target Domain]')
-        self.saver.restore(self.sess, self.ckptDir + self.model + '-' + str(self.res_eps) + '.ckpt')
+        self.saver.restore(self.sess, self.ckptDir + self.model + '-' + str(self.res_eps))
         self.test_procedure(self.target_test_data, distribution_op=self.distribution_target, inputX=self.x_target,
                             inputY=self.y_target, mode='target')

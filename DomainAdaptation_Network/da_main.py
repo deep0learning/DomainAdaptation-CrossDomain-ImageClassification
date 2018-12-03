@@ -15,14 +15,13 @@ parser.add_argument('-gpu', required=True, help='[set particular gpu for calcula
 parser.add_argument('-data_domain', required=True, help='[choose the data domain between source and target]')
 
 parser.add_argument('-epoch', default=300, type=int)
-parser.add_argument('-restore_epoch', type=int)
+parser.add_argument('-restore_epoch', default=0, type=int)
 parser.add_argument('-num_class', default=6, type=int)
 parser.add_argument('-ksize', default=3, type=int)
 parser.add_argument('-out_channel1', default=64, type=int)
 parser.add_argument('-out_channel2', default=128, type=int)
 parser.add_argument('-out_channel3', default=256, type=int)
-parser.add_argument('-learning_rate', default=1e-4, type=float)
-parser.add_argument('-weight_decay', default=1e-4, type=float)
+parser.add_argument('-learning_rate', default=2e-4, type=float)
 parser.add_argument('-batch_size', default=128, type=int)
 parser.add_argument('-img_height', default=32, type=int)
 parser.add_argument('-img_width', default=32, type=int)
@@ -84,7 +83,6 @@ with tf.Session(config=config) as sess:
                          out_channel2=args.out_channel2,
                          out_channel3=args.out_channel3,
                          learning_rate=args.learning_rate,
-                         weight_decay=args.weight_decay,
                          batch_size=args.batch_size,
                          img_height=args.img_height,
                          img_width=args.img_width,

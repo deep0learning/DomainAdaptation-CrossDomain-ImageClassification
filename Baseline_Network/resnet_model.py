@@ -33,6 +33,11 @@ class ResNet(object):
         self.img_w = img_width
         self.num_class = num_class
         self.train_phase = train_phase
+        self.plt_epoch = []
+        self.plt_training_accuracy = []
+        self.plt_validation_accuracy = []
+        self.plt_training_loss = []
+        self.plt_validation_loss = []
 
         self.build_model()
         if self.train_phase == 'Train':
@@ -288,6 +293,7 @@ class ResNet(object):
         log3 = ''
         for j in range(self.num_class):
             log3 += 'category %s test accuracy : %g\n' % (utils.pulmonary_category[j], detail_test_accuracy[j])
+        log3 = log3[:-1]
         log4 = 'F_Value : %g' % self.f_value(confusion_matrics)
 
         utils.save2file(log1, self.ckptDir, self.model)
@@ -318,6 +324,10 @@ class ResNet(object):
                 training_acc += _train_accuracy
                 training_loss += _train_loss
 
+            summary = self.sess.run(self.merged, feed_dict={self.x: _tr_img_batch,
+                                                            self.y: _tr_lab_batch,
+                                                            self.is_training: False})
+
             training_acc = float(training_acc / self.train_itr)
             training_loss = float(training_loss / self.train_itr)
 
@@ -325,23 +335,37 @@ class ResNet(object):
             self.best_val_accuracy.append(validation_acc)
             self.best_val_loss.append(validation_loss)
 
-            tf.summary.scalar('accuracy/training', training_acc)
-            tf.summary.scalar('accuracy/validation', validation_acc)
-            tf.summary.scalar('loss/training', training_loss)
-            tf.summary.scalar('loss/validation', validation_loss)
-
             log1 = "Epoch: [%d], Training Accuracy: [%g], Validation Accuracy: [%g], Loss Training: [%g] " \
                    "Loss_validation: [%g], Time: [%s]" % \
                    (e, training_acc, validation_acc, training_loss, validation_loss, time.ctime(time.time()))
 
+            self.plt_epoch.append(e)
+            self.plt_training_accuracy.append(training_acc)
+            self.plt_training_loss.append(training_loss)
+            self.plt_validation_accuracy.append(validation_acc)
+            self.plt_validation_loss.append(validation_loss)
+
+            utils.plotAccuracy(x=self.plt_epoch,
+                               y1=self.plt_training_accuracy,
+                               y2=self.plt_validation_accuracy,
+                               figName=self.model,
+                               line1Name='training',
+                               line2Name='validation',
+                               savePath=self.ckptDir)
+
+            utils.plotLoss(x=self.plt_epoch,
+                           y1=self.plt_training_loss,
+                           y2=self.plt_validation_loss,
+                           figName=self.model,
+                           line1Name='training',
+                           line2Name='validation',
+                           savePath=self.ckptDir)
+
             utils.save2file(log1, self.ckptDir, self.model)
 
-            summary = self.sess.run(self.merged, feed_dict={self.x: _tr_img_batch,
-                                                            self.y: _tr_lab_batch,
-                                                            self.is_training: False})
             self.writer.add_summary(summary, e)
 
-            self.saver.save(self.sess, self.ckptDir + self.model + '-' + str(e) + '.ckpt')
+            self.saver.save(self.sess, self.ckptDir + self.model + '-' + str(e))
 
             self.test_procedure()
 
@@ -357,5 +381,5 @@ class ResNet(object):
 
     def test(self):
         print('Start to run in mode [Test in Target Domain]')
-        self.saver.restore(self.sess, self.ckptDir + self.model + '-' + str(self.res_eps) + '.ckpt')
+        self.saver.restore(self.sess, self.ckptDir + self.model + '-' + str(self.res_eps))
         self.test_procedure()

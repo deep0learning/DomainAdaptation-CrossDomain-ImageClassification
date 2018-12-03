@@ -129,12 +129,12 @@ def splitImage_Label(pairWiseArray):
 
 
 def getPatch_DiseaseMask(imageArray, diseaseRegionArray, ROI_X, ROI_Y, ROI_Z, threshold, fileName):
-    STRIDE = {'Mul_CON': 3,
-              'Mul_GGO': 6,
-              'HCM': 7,
-              'EMP': 8,
-              'DIF_NOD': 5,
-              'NOR': 10
+    STRIDE = {'Mul_CON': 2,
+              'Mul_GGO': 5,
+              'HCM': 6,
+              'EMP': 7,
+              'DIF_NOD': 4,
+              'NOR': 9
               }
 
     classIndicator = {1: 0,
