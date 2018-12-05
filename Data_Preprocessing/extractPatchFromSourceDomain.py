@@ -238,7 +238,7 @@ if __name__ == '__main__':
     initialization(fileList, ctFilePath, diseaseMaskFilePath, lungSegMaskFilePath, picklePath)
 
     # 测试pickle文件
-    # image = loadPickle('D:/Workspace/MICCAI2018_Program/', 'DIF_NOD_005.pkl')
+    # image = loadPickle('D:/Workspace/Domain_Adaptation/', 'DIF_NOD_005.pkl')
     #
     # img = image[0]
     # lab = image[1]
