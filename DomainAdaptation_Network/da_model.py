@@ -10,7 +10,7 @@ import time
 
 
 class DA_Model(object):
-    def __init__(self, model_name, sess, train_data, val_data, tst_data, epoch, restore_epoch, num_class,
+    def __init__(self, model_name, sess, train_data, val_data, tst_data, epoch, restore_epoch, preTrained_path, num_class,
                  learning_rate, keep_rate, batch_size, img_height, img_width, train_phase):
 
         self.sess = sess
@@ -21,6 +21,7 @@ class DA_Model(object):
         self.target_test_data = tst_data[1]
         self.eps = epoch
         self.res_eps = restore_epoch
+        self.preTrained_path = preTrained_path
         self.model = model_name
         self.ckptDir = '../checkpoint/' + self.model + '/'
         self.lr = learning_rate
@@ -427,17 +428,17 @@ class DA_Model(object):
                 predictions=self.g1_source_fake_dis,
                 labels=tf.ones_like(self.g1_source_fake_dis)))
 
-            self.g1_source_feature_gloss = tf.reduce_mean(tf.losses.mean_squared_error(
-                predictions=self.g1_source_feature_dis,
-                labels=tf.ones_like(self.g1_source_feature_dis)))
+            self.g1_target_feature_gloss = tf.reduce_mean(tf.losses.mean_squared_error(
+                predictions=self.g1_target_feature_dis,
+                labels=tf.ones_like(self.g1_target_feature_dis)))
 
-            self.g2_source_gloss = tf.reduce_mean(tf.losses.mean_squared_error(
-                predictions=self.g2_source_feature_dis,
-                labels=tf.ones_like(self.g2_source_feature_dis)))
+            self.g2_target_gloss = tf.reduce_mean(tf.losses.mean_squared_error(
+                predictions=self.g2_target_feature_dis,
+                labels=tf.ones_like(self.g2_target_feature_dis)))
 
-            self.g_loss_step1 = self.loss_source + 0.1 * self.g1_source_fake_gloss + 0.1 * self.rec_loss
-            self.g_loss_step2 = self.g_loss_step1 + 0.1 * self.g1_source_feature_gloss
-            self.g_loss_step3 = self.g_loss_step2 + 0.1 * self.g2_source_gloss + 0.1 * self.FCL_loss
+            self.g_loss_step1 = self.loss_source + 0.01 * self.g1_source_fake_gloss + self.rec_loss
+            self.g_loss_step2 = self.g_loss_step1 + 0.001 * self.g1_target_feature_gloss
+            self.g_loss_step3 = self.g_loss_step2 + 0.001 * self.g2_target_gloss + 0.1 * self.FCL_loss
 
             # discriminator losses
             self.g1_source_fake_dloss = tf.reduce_mean(tf.losses.mean_squared_error(
@@ -449,17 +450,17 @@ class DA_Model(object):
 
             self.g1_source_feature_dloss = tf.reduce_mean(tf.losses.mean_squared_error(
                 predictions=self.g1_source_feature_dis,
-                labels=tf.zeros_like(self.g1_source_feature_dis)))
+                labels=tf.ones_like(self.g1_source_feature_dis)))
             self.g1_target_feature_dloss = tf.reduce_mean(tf.losses.mean_squared_error(
                 predictions=self.g1_target_feature_dis,
-                labels=tf.ones_like(self.g1_target_feature_dis)))
+                labels=tf.zeros_like(self.g1_target_feature_dis)))
 
             self.g2_source_feature_dloss = tf.reduce_mean(tf.losses.mean_squared_error(
                 predictions=self.g2_source_feature_dis,
-                labels=tf.zeros_like(self.g2_source_feature_dis)))
+                labels=tf.ones_like(self.g2_source_feature_dis)))
             self.g2_target_feature_dloss = tf.reduce_mean(tf.losses.mean_squared_error(
                 predictions=self.g2_target_feature_dis,
-                labels=tf.ones_like(self.g2_target_feature_dis)))
+                labels=tf.zeros_like(self.g2_target_feature_dis)))
 
             self.d1_loss = self.g1_source_fake_dloss + self.g1_target_dloss
             self.d2_loss = self.g1_source_feature_dloss + self.g1_target_feature_dloss
@@ -471,8 +472,8 @@ class DA_Model(object):
 
             tf.summary.scalar('source loss', self.loss_source)
             tf.summary.scalar('g1 GAN loss', self.g1_source_fake_gloss)
-            tf.summary.scalar('g1 feature loss', self.g1_source_feature_gloss)
-            tf.summary.scalar('g2 feature loss', self.g2_source_gloss)
+            tf.summary.scalar('g1 feature loss', self.g1_target_feature_gloss)
+            tf.summary.scalar('g2 feature loss', self.g2_target_gloss)
 
             tf.summary.scalar('g_loss_step1', self.g_loss_step1)
             tf.summary.scalar('g_loss_step2', self.g_loss_step2)
@@ -494,6 +495,7 @@ class DA_Model(object):
 
             self.g1_var = [var for var in self.t_var if 'G1' in var.name]
             self.g2_var = [var for var in self.t_var if 'G2' in var.name]
+            self.g2_preTrained_var = [var for var in self.g2_var if 'section3' not in var.name]
             self.FCL_var = [var for var in self.t_var if 'FCL' in var.name]
 
             self.d1_var = [var for var in self.t_var if 'D1' in var.name]
@@ -613,6 +615,10 @@ class DA_Model(object):
     def train(self):
         print('Start to run in mode [Domain Adaptation Across Source and Target Domain]')
         self.sess.run(tf.global_variables_initializer())
+        self.preTrained_saver = tf.train.Saver(var_list=self.g2_preTrained_var)
+        self.preTrained_saver.restore(self.sess, self.preTrained_path)
+        print('Pre-trained model has been successfully restored !')
+
         self.train_itr = len(self.source_training_data[0]) // self.bs
 
         for e in range(1, self.eps + 1):

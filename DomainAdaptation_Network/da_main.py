@@ -30,12 +30,15 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 if args.data_domain == 'Source':
     src_name = 'source'
     tar_name = 'target'
+    preTrained_path = '../checkpoint/bl_s2t_t1/bl_s2t_t1-51'
 elif args.data_domain == 'Target':
     src_name = 'target'
     tar_name = 'source'
+    preTrained_path = '../checkpoint/bl_t2s_t1/bl_t2s_t1-147'
 else:
     src_name = ''
     tar_name = ''
+    preTrained_path = ''
 
 src_training = DA_init.loadPickle(da_utils.experimentalPath, src_name + '_training.pkl')
 src_validation = DA_init.loadPickle(da_utils.experimentalPath, src_name + '_validation.pkl')
@@ -74,6 +77,7 @@ with tf.Session(config=config) as sess:
                          tst_data=[src_test, tar_test],
                          epoch=args.epoch,
                          restore_epoch=args.restore_epoch,
+                         preTrained_path=preTrained_path,
                          num_class=args.num_class,
                          learning_rate=args.learning_rate,
                          keep_rate=args.keep_rate,
