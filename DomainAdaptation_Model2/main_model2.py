@@ -33,7 +33,7 @@ if args.data_domain == 'Source':
 elif args.data_domain == 'Target':
     src_name = 'target'
     tar_name = 'source'
-    model1_path = '../checkpoint/da_model1_t2s_t1/da_model1_t2s_t1-23'
+    model1_path = '../checkpoint/da_model1_t2s_t1/da_model1_t2s_t1-54'
 else:
     src_name = ''
     tar_name = ''

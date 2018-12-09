@@ -394,13 +394,6 @@ class Image_Classification_Model(object):
                                               out_channel3=256,
                                               model_name='G1',
                                               is_training=self.is_training)
-        self.g1_target_fake = self.unet_model(input_x=self.x_target,
-                                              ksize=3,
-                                              out_channel1=64,
-                                              out_channel2=128,
-                                              out_channel3=256,
-                                              model_name='G1',
-                                              is_training=self.is_training)
 
         self.g2_pred_source, self.g2_pred_softmax_source, self.g2_source_feature_zoo = self.resnet_model(
             input_x=self.g1_source_fake,
@@ -415,7 +408,7 @@ class Image_Classification_Model(object):
             mode='source')
 
         self.g2_pred_target, self.g2_pred_softmax_target, self.g2_target_feature_zoo = self.resnet_model(
-            input_x=self.g1_target_fake,
+            input_x=self.x_target,
             model_name='G2',
             ksize=3,
             unit_num1=3,
@@ -455,7 +448,8 @@ class Image_Classification_Model(object):
                 predictions=self.g2_source_feature_dis,
                 labels=tf.ones_like(self.g2_source_feature_dis)))
 
-            self.g_loss = self.g2_source_gloss + 10 * self.FCL_loss + 100 * self.loss_source
+            self.g_loss_step1 = self.loss_source
+            self.g_loss_step2 = self.g2_source_gloss + 5 * self.FCL_loss + 10 * self.loss_source
 
             # discriminator losses
             self.g2_source_feature_dloss = tf.reduce_mean(tf.losses.mean_squared_error(
@@ -470,7 +464,8 @@ class Image_Classification_Model(object):
             tf.summary.scalar('source loss', self.loss_source)
             tf.summary.scalar('g2 FCL loss', self.FCL_loss)
             tf.summary.scalar('g2 source feature loss', self.g2_source_gloss)
-            tf.summary.scalar('g2 loss', self.g_loss)
+            tf.summary.scalar('g2 step1 loss', self.g_loss_step1)
+            tf.summary.scalar('g2 step2 loss', self.g_loss_step2)
 
             tf.summary.scalar('d2 loss', self.d_loss)
             tf.summary.scalar('d2 source loss', self.g2_source_feature_dloss)
@@ -493,9 +488,12 @@ class Image_Classification_Model(object):
             FCL_bn_ops = [var for var in update_ops if 'FCL' in var.name]
             d2_bn_ops = [var for var in update_ops if 'D2' in var.name]
 
+            with tf.control_dependencies(g2_bn_ops):
+                self.g_train_op_step1 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss_step1,
+                                                                                            var_list=self.g2_var)
             with tf.control_dependencies(g2_bn_ops + FCL_bn_ops):
-                self.g_train_op = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss,
-                                                                                      var_list=self.g2_var + self.FCL_var)
+                self.g_train_op_step2 = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.g_loss_step2,
+                                                                                            var_list=self.g2_var + self.FCL_var)
             with tf.control_dependencies(d2_bn_ops):
                 self.d_train_op = tf.train.AdamOptimizer(self.lr, beta1=0.5).minimize(self.d_loss,
                                                                                       var_list=self.d2_var)
@@ -623,17 +621,24 @@ class Image_Classification_Model(object):
                                   self.x_target: _tar_tr_img_batch,
                                   self.is_training: False}
 
-                _ = self.sess.run(self.d_train_op, feed_dict=feed_dict)
-                _ = self.sess.run(self.g_train_op, feed_dict=feed_dict)
+                if e <= 100:
+                    _ = self.sess.run(self.g_train_op_step1, feed_dict=feed_dict)
 
-                _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
-                    [self.accuracy_source, self.loss_source, self.g_loss, self.d_loss],
-                    feed_dict=feed_dict_eval)
+                    _training_accuracy, _training_loss = self.sess.run([self.accuracy_source, self.loss_source],
+                                                                       feed_dict=feed_dict_eval)
 
-                source_training_acc += _training_accuracy
-                source_training_loss += _training_loss
-                g_loss += _g_loss
-                d_loss += _d_loss
+                    source_training_acc += _training_accuracy
+                    source_training_loss += _training_loss
+
+                else:
+                    _ = self.sess.run(self.d_train_op, feed_dict=feed_dict)
+                    _ = self.sess.run(self.g_train_op_step2, feed_dict=feed_dict)
+
+                    _training_accuracy, _training_loss, _g_loss, _d_loss = self.sess.run(
+                        [self.accuracy_source, self.loss_source, self.g_loss_step2, self.d_loss],
+                        feed_dict=feed_dict_eval)
+                    g_loss += _g_loss
+                    d_loss += _d_loss
 
             summary = self.sess.run(self.merged, feed_dict=feed_dict_eval)
 
