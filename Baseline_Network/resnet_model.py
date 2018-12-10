@@ -62,7 +62,7 @@ class ResNet(object):
     def convLayer(self, inputMap, out_channel, ksize, stride, scope_name, padding='SAME'):
         with tf.variable_scope(scope_name):
             conv_weight = tf.get_variable('conv_weight', [ksize, ksize, inputMap.get_shape()[-1], out_channel],
-                                          initializer=layers.variance_scaling_initializer(),
+                                          initializer=layers.xavier_initializer(),
                                           regularizer=layers.l2_regularizer(self.wd))
 
             conv_result = tf.nn.conv2d(inputMap, conv_weight, strides=[1, stride, stride, 1], padding=padding)
@@ -93,7 +93,7 @@ class ResNet(object):
         with tf.variable_scope(scope_name):
             in_channel = inputMap.get_shape()[-1]
             fc_weight = tf.get_variable('fc_weight', [in_channel, out_channel],
-                                        initializer=layers.variance_scaling_initializer(),
+                                        initializer=layers.xavier_initializer(),
                                         regularizer=layers.l2_regularizer(self.wd))
             fc_bias = tf.get_variable('fc_bias', [out_channel], initializer=tf.zeros_initializer())
 
@@ -201,7 +201,7 @@ class ResNet(object):
         self.is_training = tf.placeholder(tf.bool)
         tf.summary.image('input_x', self.x, max_outputs=5)
 
-        self.y_pred, self.y_pred_softmax = self.resnet_model(input_x=self.x, model_name='ResNet', unit_num1=3,
+        self.y_pred, self.y_pred_softmax = self.resnet_model(input_x=self.x, model_name='G2', unit_num1=3,
                                                              unit_num2=3, unit_num3=3)
 
         with tf.variable_scope('loss'):

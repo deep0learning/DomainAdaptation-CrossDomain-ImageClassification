@@ -3,8 +3,8 @@ import sys
 sys.path.append('../Data_Initialization/')
 import numpy as np
 import tensorflow as tf
-import tensorflow.contrib.layers as layers
 import DomainAdaptation_Initialization as DA_init
+import tensorflow.contrib.layers as layers
 import utils_model2
 import time
 
@@ -57,7 +57,7 @@ class Image_Classification_Model(object):
         with tf.variable_scope(scope_name):
             conv_weight = tf.get_variable('conv_weight',
                                           [ksize, ksize, inputMap.get_shape().as_list()[-1], out_channel],
-                                          initializer=layers.variance_scaling_initializer())
+                                          initializer=layers.xavier_initializer())
 
             conv_result = tf.nn.conv2d(inputMap, conv_weight, strides=[1, stride, stride, 1], padding=padding)
 
@@ -70,7 +70,7 @@ class Image_Classification_Model(object):
         with tf.variable_scope(scope_name):
             conv_weight = tf.get_variable('deconv_weight',
                                           [ksize, ksize, out_channel, inputMap.get_shape().as_list()[-1]],
-                                          initializer=layers.variance_scaling_initializer())
+                                          initializer=layers.xavier_initializer())
 
             conv_result = tf.nn.conv2d_transpose(value=inputMap,
                                                  filter=conv_weight,
@@ -112,7 +112,7 @@ class Image_Classification_Model(object):
         with tf.variable_scope(scope_name):
             in_channel = inputMap.get_shape().as_list()[-1]
             fc_weight = tf.get_variable('fc_weight', [in_channel, out_channel],
-                                        initializer=layers.variance_scaling_initializer())
+                                        initializer=layers.xavier_initializer())
             fc_bias = tf.get_variable('fc_bias', [out_channel], initializer=tf.zeros_initializer())
 
             fc_result = tf.matmul(inputMap, fc_weight) + fc_bias

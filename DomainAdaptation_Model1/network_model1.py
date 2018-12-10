@@ -2,8 +2,8 @@ import sys
 
 sys.path.append('../Data_Initialization/')
 import tensorflow as tf
-import tensorflow.contrib.layers as layers
 import DomainAdaptation_Initialization as DA_init
+import tensorflow.contrib.layers as layers
 import utils_model1
 import time
 
@@ -49,7 +49,7 @@ class Image_Generator_Model(object):
         with tf.variable_scope(scope_name):
             conv_weight = tf.get_variable('conv_weight',
                                           [ksize, ksize, inputMap.get_shape().as_list()[-1], out_channel],
-                                          initializer=layers.variance_scaling_initializer())
+                                          initializer=layers.xavier_initializer())
 
             conv_result = tf.nn.conv2d(inputMap, conv_weight, strides=[1, stride, stride, 1], padding=padding)
 
@@ -62,7 +62,7 @@ class Image_Generator_Model(object):
         with tf.variable_scope(scope_name):
             conv_weight = tf.get_variable('deconv_weight',
                                           [ksize, ksize, out_channel, inputMap.get_shape().as_list()[-1]],
-                                          initializer=layers.variance_scaling_initializer())
+                                          initializer=layers.xavier_initializer())
 
             conv_result = tf.nn.conv2d_transpose(value=inputMap,
                                                  filter=conv_weight,
